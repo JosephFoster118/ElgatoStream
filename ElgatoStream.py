@@ -149,6 +149,16 @@ class OcrWorker(QThread):
     def stop(self):
         self._running = False
 
+class PokemonStats():
+    def __init__(self, stats_json_path: str):
+        with open(stats_json_path, "r") as f:
+            self._stats = json.load(f)
+
+    def getStats(self, pokemon_name: str) -> dict | None:
+        for p in self._stats:
+            if p["name"] == pokemon_name:
+                return p
+        return None
 
 # ---------------------------------------------------------------------------
 # Helpers
