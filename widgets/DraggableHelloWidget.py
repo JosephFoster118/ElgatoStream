@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
-from DraggableWidget import DraggableWidget
+from .DraggableWidget import DraggableWidget
 
 
 class DraggableHelloWidget(DraggableWidget):

@@ -8,7 +8,7 @@ import threading
 import time
 import signal
 from PokemonOcr import PokemonOcr, ImageSectionParameters, PreprocessImage
-from DraggableHelloWidget import DraggableHelloWidget
+from widgets.DraggableHelloWidget import DraggableHelloWidget
 
 # Set PulseAudio/PipeWire application properties so Discord can identify
 # and capture this app's audio stream when screen-sharing.
