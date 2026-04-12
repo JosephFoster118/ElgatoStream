@@ -9,6 +9,7 @@ import time
 import signal
 from PokemonOcr import PokemonOcr, ImageSectionParameters, PreprocessImage
 from widgets.DraggableHelloWidget import DraggableHelloWidget
+from widgets.PokemonStatWidget import PokemonStatWidget
 
 # Set PulseAudio/PipeWire application properties so Discord can identify
 # and capture this app's audio stream when screen-sharing.
@@ -145,7 +146,7 @@ class OcrWorker(QThread):
                     self.ocr_result.emit(results)
                 except Exception as e:
                     print(f"[OcrWorker] {e}")
-            QThread.sleep(1)
+            QThread.msleep(250)
 
     def stop(self):
         self._running = False
@@ -366,8 +367,13 @@ class MainWindow(QMainWindow):
         self._recordings_dir = os.path.join(base_dir, "recordings")
         self._screenshot_saver = ScreenshotSaver(self._screenshots_dir)
         self._video_recorder = VideoRecorder(self._recordings_dir)
+        self.overlay_modes = [
+            "none",
+            "Pokemon Champions: Singles",
+            "Pokemon Champions: Doubles", #Not implemented yet
+        ]
 
-            #Window setup
+        #Window setup
         self.setWindowTitle("Elgato Stream Viewer")
         self.resize(1280, 800)
         self._settings = {
@@ -528,6 +534,12 @@ class MainWindow(QMainWindow):
         self._applyFpsOverlayStyle()
         self._hide_timer.start()
 
+        #Pokemon Champions Singles overlay widgets
+        self.pokemon_champions_singles_widgets = {}
+        pokemon_champions_singles_player_stat_widget = PokemonStatWidget("Player Stats", self.video_label)
+        pokemon_champions_singles_oponent_stat_widget = PokemonStatWidget("Opponent Stats", self.video_label)
+        self.pokemon_champions_singles_widgets["player"] = pokemon_champions_singles_player_stat_widget
+        self.pokemon_champions_singles_widgets["opponent"] = pokemon_champions_singles_oponent_stat_widget
 
     # -- Workers --
 
@@ -595,12 +607,17 @@ class MainWindow(QMainWindow):
         for section, (name, score) in results.items():
             print(f"[OCR] {section}: {name} (score: {score:.2f})")
             if score > 0.85 and name is not None:
-                lowercase_name = name.lower()
-                stats = self.pokemon_stats.getStats(lowercase_name)
-                if stats:
-                    print(f"  Types: {', '.join(stats.types)}")
-                    print(f"  HP: {stats.hp}, Attack: {stats.attack}, Defense: {stats.defense}")
-                    print(f"  Sp. Atk: {stats.special_attack}, Sp. Def: {stats.special_defense}, Speed: {stats.speed}")
+                if section.startswith("player"):
+                    widget = self.pokemon_champions_singles_widgets["player"]
+                elif section.startswith("opponent"):
+                    widget = self.pokemon_champions_singles_widgets["opponent"]
+                else:
+                    continue
+                stats = self.pokemon_stats.getStats(name.lower().replace(" ", "-"))
+                if stats is None:
+                    print(f"[OCR] No stats found for: {name}")
+                widget.updateStats(stats)
+
 
     def _applyFpsOverlayStyle(self):
         alpha = max(0.1, min(1.0, self._settings.get("fps_opacity", 0.75)))
