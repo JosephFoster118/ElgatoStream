@@ -24,7 +24,7 @@ from VideoRecorder import VideoRecorder
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
-    QSlider, QFormLayout, QSizePolicy, QDialog, QDialogButtonBox,
+    QSlider, QFormLayout, QSizePolicy,
     QCheckBox, QSpinBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
@@ -247,79 +247,95 @@ def listAudioOutputDevices():
 
 
 # ---------------------------------------------------------------------------
-# Settings dialog
+# Settings panel
 # ---------------------------------------------------------------------------
 
-class SettingsDialog(QDialog):
-    def __init__(self, settings, parent=None):
+class SettingsPanel(QWidget):
+    def __init__(self, settings, apply_callback, cancel_callback, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setMinimumWidth(450)
+        self._apply_callback = apply_callback
+        self._cancel_callback = cancel_callback
 
+        self.setStyleSheet("background: #242424; color: white;")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+
         form = QFormLayout()
 
-        # Video device
         self.video_combo = QComboBox()
         for path, label in listVideoDevices():
             self.video_combo.addItem(label, path)
-        idx = self.video_combo.findData(settings["video_dev"])
-        if idx >= 0:
-            self.video_combo.setCurrentIndex(idx)
         form.addRow("Video device:", self.video_combo)
 
-        # Audio input device
         self.audio_combo = QComboBox()
         for dev_idx, label in listAudioInputDevices():
             self.audio_combo.addItem(label, dev_idx)
-        idx = self.audio_combo.findData(settings["audio_dev"])
-        if idx >= 0:
-            self.audio_combo.setCurrentIndex(idx)
         form.addRow("Audio input:", self.audio_combo)
 
-        # Audio output device
         self.audio_out_combo = QComboBox()
         self.audio_out_combo.addItem("System default", None)
         for dev_idx, label in listAudioOutputDevices():
             self.audio_out_combo.addItem(label, dev_idx)
-        idx = self.audio_out_combo.findData(settings.get("audio_out_dev"))
-        if idx >= 0:
-            self.audio_out_combo.setCurrentIndex(idx)
         form.addRow("Audio output:", self.audio_out_combo)
 
-        # Resolution
         self.res_combo = QComboBox()
         for label in RESOLUTIONS:
             self.res_combo.addItem(label)
-        cur = f"{settings['width']}x{settings['height']}"
-        for i in range(self.res_combo.count()):
-            if self.res_combo.itemText(i).startswith(cur):
-                self.res_combo.setCurrentIndex(i)
-                break
         form.addRow("Resolution:", self.res_combo)
 
         self.fps_enabled = QCheckBox("Show FPS counter")
-        self.fps_enabled.setChecked(settings.get("show_fps", False))
         form.addRow("FPS overlay:", self.fps_enabled)
 
         self.fps_font_size = QSpinBox()
         self.fps_font_size.setRange(10, 48)
-        self.fps_font_size.setValue(settings.get("fps_font_size", 18))
         self.fps_font_size.setSuffix(" px")
         form.addRow("FPS font size:", self.fps_font_size)
 
         self.fps_opacity = QSpinBox()
         self.fps_opacity.setRange(10, 100)
-        self.fps_opacity.setValue(int(settings.get("fps_opacity", 0.75) * 100))
         self.fps_opacity.setSuffix(" %")
         form.addRow("FPS background opacity:", self.fps_opacity)
 
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setFixedHeight(32)
+        apply_btn.clicked.connect(self._apply_callback)
+        button_row.addWidget(apply_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(32)
+        cancel_btn.clicked.connect(self._cancel_callback)
+        button_row.addWidget(cancel_btn)
+
+        layout.addLayout(button_row)
+        self.loadFromSettings(settings)
+
+    def loadFromSettings(self, settings):
+        idx = self.video_combo.findData(settings["video_dev"])
+        if idx >= 0:
+            self.video_combo.setCurrentIndex(idx)
+
+        idx = self.audio_combo.findData(settings["audio_dev"])
+        if idx >= 0:
+            self.audio_combo.setCurrentIndex(idx)
+
+        idx = self.audio_out_combo.findData(settings.get("audio_out_dev"))
+        if idx >= 0:
+            self.audio_out_combo.setCurrentIndex(idx)
+
+        cur = f"{settings['width']}x{settings['height']}"
+        for i in range(self.res_combo.count()):
+            if self.res_combo.itemText(i).startswith(cur):
+                self.res_combo.setCurrentIndex(i)
+                break
+
+        self.fps_enabled.setChecked(settings.get("show_fps", False))
+        self.fps_font_size.setValue(settings.get("fps_font_size", 18))
+        self.fps_opacity.setValue(int(settings.get("fps_opacity", 0.75) * 100))
 
     def getSettings(self):
         w, h = RESOLUTIONS[self.res_combo.currentText()]
@@ -343,17 +359,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        #Pokemon stats
-        self.pokemon_stats = PokemonStats("resources/pokemon_stats.json")
-
-        #Window setup
-        self.setWindowTitle("Elgato Stream Viewer")
-        self.resize(1280, 800)
-        self._screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
-        self._recordings_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.pokemon_stats = PokemonStats(os.path.join(base_dir, "resources", "pokemon_stats.json"))
+        self._screenshots_dir = os.path.join(base_dir, "screenshots")
+        self._recordings_dir = os.path.join(base_dir, "recordings")
         self._screenshot_saver = ScreenshotSaver(self._screenshots_dir)
         self._video_recorder = VideoRecorder(self._recordings_dir)
 
+            #Window setup
+        self.setWindowTitle("Elgato Stream Viewer")
+        self.resize(1280, 800)
         self._settings = {
             "video_dev": "/dev/video0",
             "audio_dev": findElgatoAudio(),
@@ -375,7 +390,6 @@ class MainWindow(QMainWindow):
         self._last_frame_size = None
         self._record_indicator_visible = True
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
         pokemon_names_path = os.path.join(base_dir, "resources", "pokemon_names.json")
         with open(pokemon_names_path) as f:
             self._pokemon_names = json.load(f)
@@ -425,6 +439,16 @@ class MainWindow(QMainWindow):
         self._record_indicator_timer.timeout.connect(self._blinkRecordingIndicator)
 
         root.addWidget(self.video_label)
+
+        self.settings_panel = SettingsPanel(
+            self._settings,
+            self._applySettingsFromPanel,
+            self._cancelSettingsPanel,
+            self,
+        )
+        self.settings_panel.hide()
+        root.addWidget(self.settings_panel)
+
         central.setMouseTracking(True)
         self.setMouseTracking(True)
 
@@ -487,10 +511,10 @@ class MainWindow(QMainWindow):
 
         tbl.addSpacing(16)
 
-        settings_btn = QPushButton("⚙  Settings")
-        settings_btn.setFixedHeight(36)
-        settings_btn.clicked.connect(self.openSettings)
-        tbl.addWidget(settings_btn)
+        self.settings_btn = QPushButton("⚙  Settings")
+        self.settings_btn.setFixedHeight(36)
+        self.settings_btn.clicked.connect(self.openSettings)
+        tbl.addWidget(self.settings_btn)
 
         root.addWidget(toolbar)
 
@@ -556,7 +580,8 @@ class MainWindow(QMainWindow):
     def _onFrameCaptured(self, frame):
         self._latest_frame = frame.copy()
         self._last_frame_size = (frame.shape[1], frame.shape[0])
-        self._video_recorder.writeFrame(frame)
+        if hasattr(self, "_video_recorder") and self._video_recorder is not None:
+            self._video_recorder.writeFrame(frame)
         if self._ocr_worker is not None:
             self._ocr_worker.updateFrame(frame)
 
@@ -599,6 +624,10 @@ class MainWindow(QMainWindow):
         self.vol_label.setText(f"{value} %")
 
     def startRecording(self):
+        if not hasattr(self, "_video_recorder") or self._video_recorder is None:
+            self.recording_label.setText("Recorder unavailable")
+            return
+
         if self._video_recorder.isRecording():
             return
 
@@ -615,6 +644,9 @@ class MainWindow(QMainWindow):
         self._setRecordingIndicator(True)
 
     def stopRecording(self):
+        if not hasattr(self, "_video_recorder") or self._video_recorder is None:
+            return
+
         path = self._video_recorder.stopRecording()
         if path is None:
             return
@@ -645,6 +677,10 @@ class MainWindow(QMainWindow):
     def saveScreenshot(self):
         if self._latest_frame is None:
             self.screenshot_label.setText("No frame available")
+            return
+
+        if not hasattr(self, "_screenshot_saver") or self._screenshot_saver is None:
+            self.screenshot_label.setText("Screenshot saver unavailable")
             return
 
         path = self._screenshot_saver.saveFrame(self._latest_frame)
@@ -690,18 +726,29 @@ class MainWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def openSettings(self):
-        dlg = SettingsDialog(self._settings, self)
-        if dlg.exec():
-            new = dlg.getSettings()
-            needs_restart = any(
-                self._settings[k] != new[k]
-                for k in ("video_dev", "audio_dev", "audio_out_dev", "width", "height")
-            )
-            self._settings.update(new)
-            self._applyFpsOverlayStyle()
-            if needs_restart:
-                self.stopRecording()
-                self._startWorkers()
+        if self.settings_panel.isVisible():
+            self._cancelSettingsPanel()
+            return
+        self.settings_panel.loadFromSettings(self._settings)
+        self.settings_panel.show()
+        self.settings_btn.setText("⚙  Hide Settings")
+
+    def _applySettingsFromPanel(self):
+        new = self.settings_panel.getSettings()
+        needs_restart = any(
+            self._settings[k] != new[k]
+            for k in ("video_dev", "audio_dev", "audio_out_dev", "width", "height")
+        )
+        self._settings.update(new)
+        self._applyFpsOverlayStyle()
+        if needs_restart:
+            self.stopRecording()
+            self._startWorkers()
+        self._cancelSettingsPanel()
+
+    def _cancelSettingsPanel(self):
+        self.settings_panel.hide()
+        self.settings_btn.setText("⚙  Settings")
 
     def closeEvent(self, event):
         self.stopRecording()

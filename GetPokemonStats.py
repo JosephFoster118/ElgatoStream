@@ -10,7 +10,7 @@ query = """
   }
 }
 """
-result_file_path = "resources/pokemon_stats.json"
+result_file_path = "resources/pokemon_stats_new.json"
 
 r = requests.post("https://beta.pokeapi.co/graphql/v1beta", json={"query": query})
 data = r.json()
