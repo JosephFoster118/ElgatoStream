@@ -1,0 +1,10 @@
+{
+    "opponent":{
+        "top_left": [1590, 53],
+        "bottom_right": [1821, 96]
+    },
+    "player":{
+        "top_left": [150, 932],
+        "bottom_right": [381, 975]
+    }
+}

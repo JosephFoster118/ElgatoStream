@@ -1,0 +1,6 @@
+opencv-python-headless
+sounddevice
+numpy
+PySide6
+easyocr
+rapidfuzz
