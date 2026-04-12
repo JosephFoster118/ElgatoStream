@@ -8,6 +8,7 @@ import threading
 import time
 import signal
 from PokemonOcr import PokemonOcr, ImageSectionParameters, PreprocessImage
+from DraggableHelloWidget import DraggableHelloWidget
 
 # Set PulseAudio/PipeWire application properties so Discord can identify
 # and capture this app's audio stream when screen-sharing.
@@ -415,6 +416,11 @@ class MainWindow(QMainWindow):
         self.video_label.setMinimumSize(1, 1)
         self.video_label.setStyleSheet("background: black; color: #888; font-size: 18px;")
         self.video_label.setMouseTracking(True)
+
+        self.hello_widget = DraggableHelloWidget(self.video_label)
+        self.hello_widget.adjustSize()
+        self.hello_widget.move(20, 60)
+        self.hello_widget.show()
 
         self.fps_label = QLabel("FPS: --", self.video_label)
         self.fps_label.setAttribute(Qt.WA_TransparentForMouseEvents)
