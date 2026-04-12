@@ -150,14 +150,44 @@ class OcrWorker(QThread):
         self._running = False
 
 class PokemonStats():
+
+    class PokemonStat:
+        def __init__(self, name: str, types: list[str], stats: dict[str, int]):
+            self.name = name
+            self.types = types
+            self.attack = stats.get("attack", 0)
+            self.defense = stats.get("defense", 0)
+            self.hp = stats.get("hp", 0)
+            self.special_attack = stats.get("special-attack", 0)
+            self.special_defense = stats.get("special-defense", 0)
+            self.speed = stats.get("speed", 0)
+            self.mega_name = None
+
+        def hasMega(self) -> bool:
+            return self.mega_name is not None
+
     def __init__(self, stats_json_path: str):
         with open(stats_json_path, "r") as f:
-            self._stats = json.load(f)
+            data = json.load(f)
+        self.stats = {}
+        for p in data:
+            name = p["name"]
+            types = p["types"]
+            stats = p["stats"]
+            self.stats[name] = self.PokemonStat(name, types, stats)
+            if name.endswith("-mega"):
+                non_mega_name = name[:-5]
+                if non_mega_name in self.stats:
+                    self.stats[non_mega_name].mega_name = name
+
+        #List all pokemon that have mega_name set and print their name and mega_name
+        for p in self.stats.values():
+            if p.hasMega():
+                print(f"{p.name} has mega evolution: {p.mega_name}")
 
     def getStats(self, pokemon_name: str) -> dict | None:
-        for p in self._stats:
-            if p["name"] == pokemon_name:
-                return p
+        if pokemon_name in self.stats:
+            return self.stats[pokemon_name]
         return None
 
 # ---------------------------------------------------------------------------
@@ -312,6 +342,11 @@ class SettingsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        #Pokemon stats
+        self.pokemon_stats = PokemonStats("resources/pokemon_stats.json")
+
+        #Window setup
         self.setWindowTitle("Elgato Stream Viewer")
         self.resize(1280, 800)
         self._screenshots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshots")
@@ -463,6 +498,7 @@ class MainWindow(QMainWindow):
         self._applyFpsOverlayStyle()
         self._hide_timer.start()
 
+
     # -- Workers --
 
     def _getGain(self):
@@ -527,6 +563,13 @@ class MainWindow(QMainWindow):
     def _onOcrResult(self, results: dict) -> None:
         for section, (name, score) in results.items():
             print(f"[OCR] {section}: {name} (score: {score:.2f})")
+            if score > 0.85 and name is not None:
+                lowercase_name = name.lower()
+                stats = self.pokemon_stats.getStats(lowercase_name)
+                if stats:
+                    print(f"  Types: {', '.join(stats.types)}")
+                    print(f"  HP: {stats.hp}, Attack: {stats.attack}, Defense: {stats.defense}")
+                    print(f"  Sp. Atk: {stats.special_attack}, Sp. Def: {stats.special_defense}, Speed: {stats.speed}")
 
     def _applyFpsOverlayStyle(self):
         alpha = max(0.1, min(1.0, self._settings.get("fps_opacity", 0.75)))
