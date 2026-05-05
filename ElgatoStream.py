@@ -8,7 +8,6 @@ import threading
 import time
 import signal
 from PokemonOcr import PokemonOcr, ImageSectionParameters, PreprocessImage
-from widgets.DraggableHelloWidget import DraggableHelloWidget
 from widgets.PokemonStatWidget import PokemonStatWidget
 
 # Set PulseAudio/PipeWire application properties so Discord can identify
@@ -253,10 +252,11 @@ def listAudioOutputDevices():
 # ---------------------------------------------------------------------------
 
 class SettingsPanel(QWidget):
-    def __init__(self, settings, apply_callback, cancel_callback, parent=None):
+    def __init__(self, settings, overlay_modes, apply_callback, cancel_callback, parent=None):
         super().__init__(parent)
         self._apply_callback = apply_callback
         self._cancel_callback = cancel_callback
+        self._overlay_modes = overlay_modes
 
         self.setStyleSheet("background: #242424; color: white;")
         layout = QVBoxLayout(self)
@@ -298,6 +298,11 @@ class SettingsPanel(QWidget):
         self.fps_opacity.setSuffix(" %")
         form.addRow("FPS background opacity:", self.fps_opacity)
 
+        self.overlay_mode_combo = QComboBox()
+        for mode in self._overlay_modes:
+            self.overlay_mode_combo.addItem(mode)
+        form.addRow("Overlay mode:", self.overlay_mode_combo)
+
         layout.addLayout(form)
 
         button_row = QHBoxLayout()
@@ -338,6 +343,10 @@ class SettingsPanel(QWidget):
         self.fps_enabled.setChecked(settings.get("show_fps", False))
         self.fps_font_size.setValue(settings.get("fps_font_size", 18))
         self.fps_opacity.setValue(int(settings.get("fps_opacity", 0.75) * 100))
+        overlay_mode = settings.get("overlay_mode", "none")
+        idx = self.overlay_mode_combo.findText(overlay_mode)
+        if idx >= 0:
+            self.overlay_mode_combo.setCurrentIndex(idx)
 
     def getSettings(self):
         w, h = RESOLUTIONS[self.res_combo.currentText()]
@@ -350,6 +359,7 @@ class SettingsPanel(QWidget):
             "show_fps": self.fps_enabled.isChecked(),
             "fps_font_size": self.fps_font_size.value(),
             "fps_opacity": self.fps_opacity.value() / 100.0,
+            "overlay_mode": self.overlay_mode_combo.currentText(),
         }
 
 
@@ -385,6 +395,7 @@ class MainWindow(QMainWindow):
             "show_fps": False,
             "fps_font_size": 18,
             "fps_opacity": 0.75,
+            "overlay_mode": "none",
         }
         self._gain = 1.0
         self._fullscreen = False
@@ -423,11 +434,6 @@ class MainWindow(QMainWindow):
         self.video_label.setStyleSheet("background: black; color: #888; font-size: 18px;")
         self.video_label.setMouseTracking(True)
 
-        self.hello_widget = DraggableHelloWidget(self.video_label)
-        self.hello_widget.adjustSize()
-        self.hello_widget.move(20, 60)
-        self.hello_widget.show()
-
         self.fps_label = QLabel("FPS: --", self.video_label)
         self.fps_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.fps_label.move(12, 12)
@@ -454,6 +460,7 @@ class MainWindow(QMainWindow):
 
         self.settings_panel = SettingsPanel(
             self._settings,
+            self.overlay_modes,
             self._applySettingsFromPanel,
             self._cancelSettingsPanel,
             self,
@@ -540,6 +547,11 @@ class MainWindow(QMainWindow):
         pokemon_champions_singles_oponent_stat_widget = PokemonStatWidget("Opponent Stats", self.video_label)
         self.pokemon_champions_singles_widgets["player"] = pokemon_champions_singles_player_stat_widget
         self.pokemon_champions_singles_widgets["opponent"] = pokemon_champions_singles_oponent_stat_widget
+        self.pokemon_champions_singles_widgets["player"].move(20, 120)
+        self.pokemon_champions_singles_widgets["player"].adjustSize()
+        self.pokemon_champions_singles_widgets["opponent"].move(20, 360)
+        self.pokemon_champions_singles_widgets["opponent"].adjustSize()
+        self._applyOverlayMode()
 
     # -- Workers --
 
@@ -604,8 +616,11 @@ class MainWindow(QMainWindow):
             self._ocr_worker.updateFrame(frame)
 
     def _onOcrResult(self, results: dict) -> None:
+        if self._settings.get("overlay_mode") != "Pokemon Champions: Singles":
+            return
+
         for section, (name, score) in results.items():
-            print(f"[OCR] {section}: {name} (score: {score:.2f})")
+            #print(f"[OCR] {section}: {name} (score: {score:.2f})")
             if score > 0.85 and name is not None:
                 if section.startswith("player"):
                     widget = self.pokemon_champions_singles_widgets["player"]
@@ -613,10 +628,29 @@ class MainWindow(QMainWindow):
                     widget = self.pokemon_champions_singles_widgets["opponent"]
                 else:
                     continue
-                stats = self.pokemon_stats.getStats(name.lower().replace(" ", "-"))
+                #Check if the pokemon name has changed since last update, if not skip updating stats to avoid unnecessary updates
+                lowercase_name = name.lower().replace(" ", "-")
+                current_name = getattr(widget, "pokemon_name", "")
+                if current_name.lower().replace(" ", "-") == lowercase_name:
+                    continue
+                stats = self.pokemon_stats.getStats(lowercase_name)
+                mega_stats = None
+                if stats is not None and getattr(stats, "mega_name", None):
+                    mega_stats = self.pokemon_stats.getStats(stats.mega_name)
                 if stats is None:
                     print(f"[OCR] No stats found for: {name}")
-                widget.updateStats(stats)
+                widget.updateStats(stats, mega_stats)
+
+    def _applyOverlayMode(self):
+        mode = self._settings.get("overlay_mode", "none")
+        if mode == "Pokemon Champions: Singles":
+            self.pokemon_champions_singles_widgets["player"].show()
+            self.pokemon_champions_singles_widgets["opponent"].show()
+            return
+
+        # Hide singles widgets for unsupported modes or explicit none.
+        self.pokemon_champions_singles_widgets["player"].hide()
+        self.pokemon_champions_singles_widgets["opponent"].hide()
 
 
     def _applyFpsOverlayStyle(self):
@@ -764,6 +798,7 @@ class MainWindow(QMainWindow):
         )
         self._settings.update(new)
         self._applyFpsOverlayStyle()
+        self._applyOverlayMode()
         if needs_restart:
             self.stopRecording()
             self._startWorkers()

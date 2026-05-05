@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QWidget
 
 from .DraggableWidget import DraggableWidget
@@ -38,6 +38,14 @@ class PokemonStatWidget(DraggableWidget):
     def __init__(self, widget_header, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.pokemon_name = ""
+        self.stats = None
+        self.mega_stats = None
+        self._showing_mega = False
+        self._alternate_period_ms = 1000
+        self._alternate_timer = QTimer(self)
+        self._alternate_timer.setInterval(self._alternate_period_ms)
+        self._alternate_timer.timeout.connect(self._onAlternateTick)
 
         self.setStyleSheet(
             "background-color: rgba(0, 0, 0, 160);"
@@ -71,6 +79,9 @@ class PokemonStatWidget(DraggableWidget):
 
 
     def _setUnknown(self):
+        self._alternate_timer.stop()
+        self._showing_mega = False
+        self.pokemon_name = "Unknown"
         self.pokemon_name_label.setValue("Unknown")
         self.hp_label.setValue("--")
         self.attack_label.setValue("--")
@@ -79,27 +90,95 @@ class PokemonStatWidget(DraggableWidget):
         self.sp_defense_label.setValue("--")
         self.speed_label.setValue("--")
 
-    def updateStats(self, stats):
+    def setAlternatePeriodMs(self, period_ms: int):
+        self._alternate_period_ms = max(100, int(period_ms))
+        self._alternate_timer.setInterval(self._alternate_period_ms)
+
+    def getAlternatePeriodMs(self) -> int:
+        return self._alternate_period_ms
+
+    def setAlternatePeriodSeconds(self, period_seconds: float):
+        self.setAlternatePeriodMs(int(float(period_seconds) * 1000))
+
+    def getAlternatePeriodSeconds(self) -> float:
+        return self._alternate_period_ms / 1000.0
+
+    def _renderStats(self, stats, is_mega=False):
+        if isinstance(stats, dict):
+            name = stats.get("name", "Unknown")
+            stat_values = stats.get("stats", {})
+            hp = stat_values.get("hp", "--")
+            attack = stat_values.get("attack", "--")
+            defense = stat_values.get("defense", "--")
+            sp_attack = stat_values.get("special-attack", "--")
+            sp_defense = stat_values.get("special-defense", "--")
+            speed = stat_values.get("speed", "--")
+        else:
+            name = getattr(stats, "name", "Unknown")
+            hp = getattr(stats, "hp", "--")
+            attack = getattr(stats, "attack", "--")
+            defense = getattr(stats, "defense", "--")
+            sp_attack = getattr(stats, "special_attack", "--")
+            sp_defense = getattr(stats, "special_defense", "--")
+            speed = getattr(stats, "speed", "--")
+
+        self.pokemon_name = str(name)
+        display_name = self.pokemon_name
+        if is_mega and "mega" not in display_name.lower():
+            display_name = f"{display_name} (Mega)"
+
+        self.pokemon_name_label.setValue(display_name)
+        self.hp_label.setValue(hp)
+        self.attack_label.setValue(attack)
+        self.defense_label.setValue(defense)
+        self.sp_attack_label.setValue(sp_attack)
+        self.sp_defense_label.setValue(sp_defense)
+        self.speed_label.setValue(speed)
+
+    def _onAlternateTick(self):
+        if self.stats is None or self.mega_stats is None:
+            self._alternate_timer.stop()
+            return
+
+        self._showing_mega = not self._showing_mega
+        if self._showing_mega:
+            self._renderStats(self.mega_stats, is_mega=True)
+        else:
+            self._renderStats(self.stats, is_mega=False)
+
+    def _extractName(self, stats):
+        if stats is None:
+            return None
+        if isinstance(stats, dict):
+            return stats.get("name", None)
+        return getattr(stats, "name", None)
+
+    def updateStats(self, stats, mega_stats=None):
         if stats is None:
             self._setUnknown()
             return
 
-        if isinstance(stats, dict):
-            self.pokemon_name_label.setValue(stats.get("name", "Unknown"))
-            stat_values = stats.get("stats", {})
-            self.hp_label.setValue(stat_values.get("hp", "--"))
-            self.attack_label.setValue(stat_values.get("attack", "--"))
-            self.defense_label.setValue(stat_values.get("defense", "--"))
-            self.sp_attack_label.setValue(stat_values.get("special-attack", "--"))
-            self.sp_defense_label.setValue(stat_values.get("special-defense", "--"))
-            self.speed_label.setValue(stat_values.get("speed", "--"))
-            return
+        previous_name = self._extractName(self.stats)
+        incoming_name = self._extractName(stats)
+        same_pokemon = previous_name is not None and incoming_name == previous_name
+        had_mega = self.mega_stats is not None
+        has_mega = mega_stats is not None
+        mega_mode_changed = had_mega != has_mega
 
-        # PokemonStats.PokemonStat object
-        self.pokemon_name_label.setValue(getattr(stats, "name", "Unknown"))
-        self.hp_label.setValue(getattr(stats, "hp", "--"))
-        self.attack_label.setValue(getattr(stats, "attack", "--"))
-        self.defense_label.setValue(getattr(stats, "defense", "--"))
-        self.sp_attack_label.setValue(getattr(stats, "special_attack", "--"))
-        self.sp_defense_label.setValue(getattr(stats, "special_defense", "--"))
-        self.speed_label.setValue(getattr(stats, "speed", "--"))
+        self.stats = stats
+        self.mega_stats = mega_stats
+
+        if same_pokemon and not mega_mode_changed:
+            if self._showing_mega and has_mega:
+                self._renderStats(self.mega_stats, is_mega=True)
+            else:
+                self._renderStats(self.stats, is_mega=False)
+        else:
+            self._showing_mega = False
+            self._renderStats(self.stats, is_mega=False)
+
+        if has_mega:
+            if not self._alternate_timer.isActive():
+                self._alternate_timer.start()
+        else:
+            self._alternate_timer.stop()
